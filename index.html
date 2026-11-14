@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spotback</title>
+<meta name="description" content="Save your current location and get guided back to it.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F2F2F7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+<meta name="color-scheme" content="light dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Spotback">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+
+<style>
+/* ---------- iOS design tokens ---------- */
+:root {
+  --bg: #F2F2F7; --surface: #FFFFFF; --label: #000000; --secondary: #8A8A8E; --sep: #C6C6C8;
+  --blue: #007AFF; --green: #34C759; --red: #FF3B30;
+  --blue-tint: rgba(0,122,255,.14); --red-tint: rgba(255,59,48,.14);
+  --fill: rgba(118,118,128,.12); --seg-on: #FFFFFF; --switch-off: #E9E9EA;
+  --sheet-bg: #F2F2F7; --sheet-surface: #FFFFFF; --bar: rgba(249,249,249,.94); --scrim: rgba(0,0,0,.4);
+  --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000; --surface: #1C1C1E; --label: #FFFFFF; --secondary: #98989F; --sep: #38383A;
+    --blue: #0A84FF; --green: #30D158; --red: #FF453A;
+    --blue-tint: rgba(10,132,255,.16); --red-tint: rgba(255,69,58,.16);
+    --fill: rgba(118,118,128,.24); --seg-on: #636366; --switch-off: #39393D;
+    --sheet-bg: #1C1C1E; --sheet-surface: #2C2C2E; --bar: rgba(29,29,31,.92); --scrim: rgba(0,0,0,.55);
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: var(--font); font-size: 17px; line-height: 1.3; color: var(--label); background: var(--bg);
+  -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
+  overflow: hidden; overscroll-behavior: none;
+}
+button, input { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; -webkit-user-select: none; user-select: none; }
+button:disabled { opacity: .35; cursor: default; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+h1, h2, p { margin: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.ic { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.text-blue { color: var(--blue); }
+.text-red { color: var(--red); }
+.text-secondary { color: var(--secondary); }
+[hidden] { display: none !important; }
+
+/* ---------- Layers ---------- */
+.screen {
+  position: fixed; inset: 0; z-index: 10; background: var(--bg); display: flex; flex-direction: column;
+  transform: translateX(100%); visibility: hidden;
+  transition: transform .36s cubic-bezier(.32,.72,0,1), visibility 0s linear .36s;
+}
+.screen.modal { transform: translateY(100%); }
+.screen.open { transform: none; visibility: visible; transition: transform .36s cubic-bezier(.32,.72,0,1), visibility 0s; }
+.scrim { position: fixed; inset: 0; z-index: 20; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .3s; }
+.scrim.show { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--sheet-bg);
+  border-radius: 14px 14px 0 0; max-height: 92vh; max-height: 92dvh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--sab) + 16px);
+  transform: translateY(100%); visibility: hidden;
+  transition: transform .36s cubic-bezier(.32,.72,0,1), visibility 0s linear .36s;
+}
+.sheet.open { transform: none; visibility: visible; transition: transform .36s cubic-bezier(.32,.72,0,1), visibility 0s; }
+.sheet .grabber { width: 36px; height: 5px; border-radius: 3px; background: var(--sep); margin: 6px auto 0; }
+.sheet .group { background: var(--sheet-surface); }
+.sheet .row:not(:first-child)::before { background: var(--sep); }
+
+/* ---------- Nav bar ---------- */
+.navbar { position: relative; display: flex; align-items: center; justify-content: space-between; height: 44px; margin-top: var(--sat); padding: 0 8px; flex: 0 0 auto; }
+.sheet .navbar { margin-top: 0; height: 52px; }
+.navbar .title { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); font-weight: 600; font-size: 17px; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.navbtn { color: var(--blue); font-size: 17px; min-height: 44px; min-width: 44px; padding: 0 8px; display: inline-flex; align-items: center; gap: 2px; }
+.navbtn.bold { font-weight: 600; }
+.navbtn .ic { width: 22px; height: 22px; stroke-width: 2.4; margin-left: -6px; }
+.navbtn:active { opacity: .4; }
+.large-title { font-size: 34px; font-weight: 700; letter-spacing: .3px; padding: 4px 16px 10px; line-height: 41px; }
+
+/* ---------- Grouped lists ---------- */
+.content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.group { background: var(--surface); border-radius: 12px; margin: 0 16px; overflow: hidden; }
+.group + .group, .footnote + .group { margin-top: 20px; }
+.row { position: relative; display: flex; align-items: center; min-height: 44px; padding: 10px 16px; gap: 12px; width: 100%; text-align: left; color: var(--label); }
+.row:not(:first-child)::before { content: ""; position: absolute; top: 0; right: 0; left: 16px; height: .5px; background: var(--sep); }
+.row.has-tile:not(:first-child)::before { left: 58px; }
+button.row:active, .row.tappable:active { background: var(--fill); }
+.row .main { flex: 1; min-width: 0; text-align: left; }
+.row .name { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .sub { font-size: 15px; color: var(--secondary); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .detail { color: var(--secondary); font-size: 17px; white-space: nowrap; }
+.row .chev { color: var(--sep); width: 12px; height: 20px; stroke-width: 2.6; flex: 0 0 auto; }
+.row input { flex: 1; min-width: 0; text-align: right; background: none; border: 0; padding: 0; color: var(--label); outline: none; }
+.row input::placeholder { color: var(--secondary); }
+.row label { flex: 0 0 auto; min-width: 56px; }
+.footnote { font-size: 13px; color: var(--secondary); padding: 7px 32px 0; line-height: 18px; }
+.tile { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; color: #fff; flex: 0 0 auto; }
+.tile .ic { width: 18px; height: 18px; }
+.tile-red { background: #FF3B30; } .tile-blue { background: #007AFF; } .tile-green { background: #34C759; } .tile-orange { background: #FF9500; }
+.tile-indigo { background: #5856D6; } .tile-brown { background: #A2845E; } .tile-gray { background: #8E8E93; } .tile-teal { background: #30B0C7; }
+.info-btn { width: 44px; height: 44px; margin: -10px -14px -10px -6px; display: grid; place-items: center; color: var(--blue); flex: 0 0 auto; }
+.info-btn .ic { width: 22px; height: 22px; stroke-width: 1.6; }
+
+/* ---------- Buttons ---------- */
+.btn { display: flex; align-items: center; justify-content: center; height: 50px; border-radius: 14px; font-size: 17px; font-weight: 600; width: 100%; transition: opacity .15s; }
+.btn:active { opacity: .7; }
+.btn-filled { background: var(--blue); color: #fff; }
+.btn-tinted { background: var(--blue-tint); color: var(--blue); }
+.btn-tinted.red { background: var(--red-tint); color: var(--red); }
+.btn-plain { color: var(--blue); background: none; }
+.btn-plain.red { color: var(--red); }
+.btn-row { display: flex; gap: 12px; }
+.btn-row .btn { flex: 1; }
+.bottom-bar {
+  position: sticky; bottom: 0; flex: 0 0 auto; background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-top: .5px solid var(--sep); padding: 12px 16px calc(var(--sab) + 12px);
+}
+#home .bottom-bar { position: fixed; left: 0; right: 0; bottom: 0; }
+
+/* ---------- Segmented control & switch ---------- */
+.seg { display: flex; background: var(--fill); border-radius: 9px; padding: 2px; width: 180px; height: 32px; }
+.seg button { flex: 1; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--label); position: relative; }
+.seg button[aria-pressed="true"] { background: var(--seg-on); font-weight: 600; box-shadow: 0 3px 8px rgba(0,0,0,.12), 0 3px 1px rgba(0,0,0,.04); }
+.switch { position: relative; width: 51px; height: 31px; border-radius: 16px; background: var(--switch-off); transition: background .25s; flex: 0 0 auto; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 3px 1px rgba(0,0,0,.06); transition: transform .25s cubic-bezier(.32,.72,0,1); }
+.switch[aria-checked="true"] { background: var(--green); }
+.switch[aria-checked="true"]::after { transform: translateX(20px); }
+
+/* ---------- Banners (inset grouped, tinted) ---------- */
+.banner { margin: 0 16px 16px; padding: 12px 16px; border-radius: 12px; background: var(--surface); font-size: 15px; line-height: 20px; }
+.banner strong { display: block; font-weight: 600; }
+.banner .text-secondary { font-size: 13px; display: block; margin-top: 4px; line-height: 18px; }
+.banner button { color: var(--blue); font-weight: 600; margin-top: 6px; min-height: 32px; font-size: 15px; }
+
+/* ---------- Empty state ---------- */
+.empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 18vh 32px 0; color: var(--secondary); }
+.empty .ic { width: 56px; height: 56px; stroke-width: 1.3; color: var(--sep); margin-bottom: 14px; }
+.empty h2 { font-size: 22px; font-weight: 700; color: var(--label); margin-bottom: 6px; }
+.empty p { font-size: 15px; line-height: 20px; max-width: 280px; }
+
+/* ---------- Save screen ---------- */
+.save-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 32px; gap: 10px; }
+.save-body h2 { font-size: 22px; font-weight: 700; margin-top: 10px; }
+.save-body p { color: var(--secondary); font-size: 15px; line-height: 20px; }
+.save-body .acc { color: var(--label); font-size: 17px; font-weight: 600; margin-top: 4px; }
+.progress { width: min(240px, 70vw); height: 4px; border-radius: 2px; background: var(--fill); overflow: hidden; margin-top: 10px; }
+.progress i { display: block; height: 100%; width: 0; background: var(--blue); border-radius: 2px; transition: width .5s linear; }
+.spinner { position: relative; width: 36px; height: 36px; }
+.spinner i { position: absolute; left: 50%; top: 0; width: 3px; height: 10px; margin-left: -1.5px; border-radius: 2px; background: var(--secondary); transform-origin: 50% 18px; animation: spin 1s linear infinite; }
+@keyframes spin { 0% { opacity: 1; } 100% { opacity: .15; } }
+.save-err { color: var(--label); }
+.save-err ol { text-align: left; color: var(--secondary); font-size: 14px; line-height: 20px; margin: 10px 0 0; padding-left: 20px; }
+.save-err button { color: var(--blue); font-weight: 600; min-height: 44px; }
+
+/* ---------- Directions ---------- */
+.dir-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 8px 16px 16px; }
+.instruction { font-size: 28px; font-weight: 700; min-height: 34px; line-height: 34px; }
+.trend { font-size: 15px; color: var(--secondary); min-height: 20px; margin-top: 2px; }
+.dial { position: relative; width: min(260px, 64vw); aspect-ratio: 1; margin: 14px 0 8px; display: grid; place-items: center; }
+.dial > svg.ring { position: absolute; inset: 0; width: 100%; height: 100%; }
+.arrow { width: 52%; height: 52%; will-change: transform; transition: opacity .3s; }
+.arrow svg { width: 100%; height: 100%; display: block; }
+.arrow path { fill: var(--blue); transition: fill .3s; }
+.arrow.aligned path { fill: var(--green); }
+.arrow.aligned { animation: pulse 1.1s ease-in-out infinite; }
+.arrow.off { opacity: .12; }
+@keyframes pulse { 50% { scale: 1.08; } }
+.northup { position: absolute; bottom: 10%; font-size: 12px; color: var(--secondary); text-transform: uppercase; letter-spacing: .6px; }
+.close-msg { position: absolute; font-size: 17px; font-weight: 600; color: var(--label); max-width: 70%; line-height: 22px; }
+.compass-msg { font-size: 15px; color: var(--secondary); line-height: 20px; min-height: 20px; max-width: 320px; }
+.compass-msg button { color: var(--blue); font-weight: 600; min-height: 44px; padding: 0 8px; font-size: 15px; }
+.dist-block { margin-top: 6px; }
+.dist { font-size: 80px; font-weight: 700; letter-spacing: -2px; line-height: 88px; display: inline-flex; align-items: baseline; gap: 6px; }
+.dist .unit { font-size: 28px; font-weight: 600; color: var(--secondary); letter-spacing: 0; }
+.away { font-size: 17px; color: var(--secondary); margin-top: -4px; }
+.accuracy { font-size: 13px; color: var(--secondary); margin-top: 6px; min-height: 18px; }
+.accuracy.low { color: var(--red); }
+.note-card { margin: 18px 0 0; width: 100%; }
+.note-card .row { font-size: 15px; color: var(--label); text-align: left; }
+
+/* Arrival card */
+.card { position: fixed; left: 8px; right: 8px; bottom: calc(var(--sab) + 8px); z-index: 30; background: var(--sheet-bg); border-radius: 14px; padding: 24px 16px 12px; text-align: center; transform: translateY(120%); visibility: hidden; transition: transform .36s cubic-bezier(.32,.72,0,1), visibility 0s linear .36s; }
+.card.open { transform: none; visibility: visible; transition: transform .36s cubic-bezier(.32,.72,0,1), visibility 0s; }
+.card .check { width: 64px; height: 64px; border-radius: 50%; background: var(--green); color: #fff; display: grid; place-items: center; margin: 0 auto 12px; }
+.card .check .ic { width: 34px; height: 34px; stroke-width: 3; }
+.card h2 { font-size: 22px; font-weight: 700; }
+.card p { font-size: 15px; color: var(--secondary); margin: 4px 0 18px; }
+.card .btn + .btn { margin-top: 8px; }
+
+/* Icon picker */
+.picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 8px; padding: 16px; }
+.picker button { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--label); min-height: 44px; }
+.picker .tile { width: 44px; height: 44px; border-radius: 11px; }
+.picker .tile .ic { width: 26px; height: 26px; }
+.picker button[aria-pressed="true"] .tile { outline: 2.5px solid var(--blue); outline-offset: 3px; }
+
+/* Toast */
+.toast { position: fixed; left: 16px; right: 16px; bottom: calc(var(--sab) + 90px); z-index: 40; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-radius: 13px; background: var(--surface); border: .5px solid var(--sep); font-size: 15px; transform: translateY(20px); opacity: 0; pointer-events: none; transition: all .3s cubic-bezier(.32,.72,0,1); }
+.toast.show { transform: none; opacity: 1; pointer-events: auto; }
+.toast button { color: var(--blue); font-weight: 600; min-height: 32px; padding: 0 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen, .sheet, .card, .scrim, .toast, .switch::after { transition: none !important; }
+  .arrow.aligned { animation: none; }
+  .spinner i { animation-duration: 1.6s; }
+}
+@media (min-width: 700px) {
+  #home, .screen, .sheet, .card, .toast, #home .bottom-bar { max-width: 480px; left: 50%; right: auto; transform: translateX(-50%); width: 100%; }
+  .screen { transform: translate(calc(-50% + 100%), 0); }
+  .screen.modal { transform: translate(-50%, 100%); }
+  .screen.open { transform: translate(-50%, 0); }
+  .sheet, .card { transform: translate(-50%, 110%); }
+  .sheet.open, .card.open { transform: translate(-50%, 0); }
+  .toast { transform: translate(-50%, 20px); }
+  .toast.show { transform: translate(-50%, 0); }
+  #home { position: fixed; inset: 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- SVG symbol library (white line glyphs) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="g-pin" viewBox="0 0 24 24"><path d="M12 21.5s-6.5-5.6-6.5-11.3A6.5 6.5 0 0 1 18.5 10.2C18.5 15.9 12 21.5 12 21.5z"/><circle cx="12" cy="10.2" r="2.3"/></symbol>
+  <symbol id="g-car" viewBox="0 0 24 24"><path d="M4 15.5v-3.2L6.2 7h11.6L20 12.3v3.2"/><path d="M4 15.5h16M4 15.5v2.5h2.5v-2M20 15.5v2.5h-2.5v-2"/><circle cx="7.5" cy="12.8" r=".6"/><circle cx="16.5" cy="12.8" r=".6"/></symbol>
+  <symbol id="g-bike" viewBox="0 0 24 24"><circle cx="6" cy="16" r="3.2"/><circle cx="18" cy="16" r="3.2"/><path d="M6 16l3.6-7.2h4.2L18 16M9.6 8.8h4M12.5 16l1.8-7.2"/></symbol>
+  <symbol id="g-tent" viewBox="0 0 24 24"><path d="M12 4l9.5 16h-19zM12 4v16"/><path d="M8.6 20L12 13.5 15.4 20"/></symbol>
+  <symbol id="g-home" viewBox="0 0 24 24"><path d="M4 11.2L12 4.5l8 6.7V20H4z"/><path d="M9.8 20v-5.5h4.4V20"/></symbol>
+  <symbol id="g-bag" viewBox="0 0 24 24"><path d="M5 8.5h14l-1 11.5H6zM9 8.5V6.5a3 3 0 0 1 6 0v2"/></symbol>
+  <symbol id="g-key" viewBox="0 0 24 24"><circle cx="8" cy="15.5" r="4.2"/><path d="M11 12.5L20 3.5M17 6.5l2.6 2.6M14 9.5l2.6 2.6"/></symbol>
+  <symbol id="g-beach" viewBox="0 0 24 24"><path d="M12 3.5a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9zM12 12.5v8M12 3.5v9M7.5 12.5c0-5 2-9 4.5-9s4.5 4 4.5 9"/></symbol>
+  <symbol id="g-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></symbol>
+  <symbol id="g-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r=".8" fill="currentColor"/></symbol>
+  <symbol id="g-chev-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="g-chev-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="g-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+</svg>
+
+<!-- ===================== HOME ===================== -->
+<main id="home" aria-label="Spots">
+  <div class="navbar">
+    <span></span>
+    <button class="navbtn" id="btnSettings" aria-label="Settings"><svg class="ic" style="width:24px;height:24px;margin:0"><use href="#g-sliders"/></svg></button>
+  </div>
+  <h1 class="large-title">Spots</h1>
+  <div class="content" id="homeContent" style="padding-bottom:120px">
+    <div class="banner" id="insecureBanner" hidden role="alert">
+      <strong>Location needs a secure connection</strong>
+      Browsers only share your location on pages served over HTTPS (or on localhost). Open Spotback from an https:// address.
+    </div>
+    <div class="banner" id="deniedBanner" hidden role="alert">
+      <strong>Location access is off</strong>
+      Spotback can't measure distance or direction without it.
+      <span class="text-secondary" id="deniedHow"></span>
+      <button id="btnDeniedRetry">Try Again</button>
+    </div>
+    <div class="banner" id="demoBanner" hidden>
+      <strong>Demo mode</strong>
+      Location and compass are simulated. Open a spot to watch the walker approach it; use ← → to turn.
+    </div>
+    <div class="group" id="spotList" role="list" hidden></div>
+    <p class="footnote" id="listFoot" hidden>Tap a spot to get back to it.</p>
+    <div class="empty" id="empty" hidden>
+      <svg class="ic"><use href="#g-pin"/></svg>
+      <h2>No Spots</h2>
+      <p>Save your current location, like where you parked, and Spotback will guide you back to it.</p>
+    </div>
+  </div>
+  <div class="bottom-bar">
+    <button class="btn btn-filled" id="btnSave">Save Current Location</button>
+  </div>
+</main>
+
+<!-- ===================== SAVE LOCATION ===================== -->
+<section class="screen modal" id="screenSave" role="dialog" aria-modal="true" aria-labelledby="saveTitle">
+  <div class="navbar">
+    <button class="navbtn" id="btnSaveCancel">Cancel</button>
+    <span class="title" id="saveTitle">Save Location</span>
+    <span style="width:60px"></span>
+  </div>
+  <div class="save-body">
+    <div class="spinner" id="saveSpinner" aria-hidden="true"></div>
+    <h2 id="saveHeadline">Finding your location…</h2>
+    <p id="saveSub">Stay where you are for a few seconds.</p>
+    <div class="acc tnum" id="saveAcc">Accuracy: —</div>
+    <div class="progress" aria-hidden="true"><i id="saveProgress"></i></div>
+    <div class="save-err" id="saveErr" hidden></div>
+  </div>
+  <div class="bottom-bar">
+    <button class="btn btn-filled" id="btnSaveNow" disabled>Save Now</button>
+  </div>
+</section>
+
+<!-- ===================== DIRECTIONS ===================== -->
+<section class="screen" id="screenDir" aria-labelledby="dirTitle">
+  <div class="navbar">
+    <button class="navbtn" id="btnDirBack"><svg class="ic"><use href="#g-chev-left"/></svg>Spots</button>
+    <span class="title" id="dirTitle">Spot</span>
+    <button class="navbtn" id="btnDirEdit">Edit</button>
+  </div>
+  <div class="dir-body">
+    <h2 class="instruction" id="instruction">Finding you…</h2>
+    <p class="trend" id="trend"></p>
+    <div class="dial">
+      <svg class="ring" viewBox="0 0 260 260" aria-hidden="true">
+        <circle cx="130" cy="130" r="127" fill="none" stroke="var(--sep)" stroke-width="1.5"/>
+        <path d="M130 7l6 10h-12z" fill="var(--label)"/>
+      </svg>
+      <div class="arrow" id="arrow" aria-hidden="true">
+        <svg viewBox="0 0 100 100"><path d="M50 6 L84 90 L50 74 L16 90 Z"/></svg>
+      </div>
+      <span class="northup" id="northUp" hidden>North up</span>
+      <span class="close-msg" id="closeMsg" hidden>You're very close. Look around.</span>
+    </div>
+    <p class="sr-only" id="srDir" aria-live="polite"></p>
+    <p class="compass-msg" id="compassMsg"><span id="compassText"></span> <button id="btnCompass" hidden></button></p>
+    <div class="dist-block">
+      <div class="dist tnum" aria-hidden="true"><span id="distValue">—</span><span class="unit" id="distUnit"></span></div>
+      <div class="away">away</div>
+      <div class="accuracy tnum" id="accuracy"></div>
+    </div>
+    <div class="group note-card" id="noteCard" hidden><div class="row" id="noteText"></div></div>
+  </div>
+  <div class="bottom-bar btn-row">
+    <a class="btn btn-filled" id="btnMaps" href="#" target="_blank" rel="noopener" style="text-decoration:none">Directions</a>
+    <button class="btn btn-tinted" id="btnShare">Share</button>
+  </div>
+</section>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- ===================== EDIT SHEET ===================== -->
+<section class="sheet" id="sheetEdit" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+  <div class="grabber"></div>
+  <div class="navbar">
+    <span style="width:60px"></span>
+    <span class="title" id="editTitle">Edit Spot</span>
+    <button class="navbtn bold" id="btnEditDone">Done</button>
+  </div>
+  <div class="group">
+    <div class="row"><label for="edName">Name</label><input id="edName" maxlength="40" autocomplete="off" placeholder="Spot"></div>
+    <div class="row"><label for="edNote">Note</label><input id="edNote" maxlength="120" autocomplete="off" placeholder="Level 3, near the elevator"></div>
+  </div>
+  <div class="group" style="margin-top:20px"><div class="picker" id="picker" role="group" aria-label="Icon"></div></div>
+  <p class="footnote" id="editFoot"></p>
+  <div class="group" style="margin-top:20px"><button class="row text-red" id="btnEditDelete" style="justify-content:center">Delete Spot</button></div>
+</section>
+
+<!-- ===================== SETTINGS SHEET ===================== -->
+<section class="sheet" id="sheetSettings" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="grabber"></div>
+  <div class="navbar">
+    <span style="width:60px"></span>
+    <span class="title" id="settingsTitle">Settings</span>
+    <button class="navbtn bold" id="btnSettingsDone">Done</button>
+  </div>
+  <div class="group">
+    <div class="row"><span class="main">Distance</span>
+      <div class="seg" id="segUnits" role="group" aria-label="Distance units"><button data-v="m" aria-pressed="true">Meters</button><button data-v="ft" aria-pressed="false">Feet</button></div>
+    </div>
+    <div class="row"><span class="main">Vibration</span><button class="switch" id="swVibrate" role="switch" aria-checked="true" aria-label="Vibration"></button></div>
+  </div>
+  <p class="footnote">Spots are stored only on this device. Nothing is uploaded and there are no accounts or analytics.</p>
+  <p class="footnote" id="installHint">To install: tap Share, then “Add to Home Screen”.</p>
+  <div class="group" style="margin-top:20px"><button class="row text-red" id="btnDeleteAll" style="justify-content:center">Delete All Spots</button></div>
+</section>
+
+<!-- ===================== IMPORT SHEET ===================== -->
+<section class="sheet" id="sheetImport" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+  <div class="grabber"></div>
+  <div class="navbar">
+    <button class="navbtn" id="btnImportCancel">Cancel</button>
+    <span class="title" id="importTitle">Import Shared Spot</span>
+    <span style="width:60px"></span>
+  </div>
+  <div class="group"><div class="row has-tile" id="importRow"></div></div>
+  <p class="footnote">This spot was shared with you by link. Adding it keeps a copy on this device only.</p>
+  <div style="padding:20px 16px 0"><button class="btn btn-filled" id="btnImportAdd">Add to Spots</button></div>
+</section>
+
+<!-- ===================== ARRIVAL CARD ===================== -->
+<section class="card" id="cardArrival" role="dialog" aria-modal="true" aria-labelledby="arrivalTitle">
+  <div class="check"><svg class="ic"><use href="#g-check"/></svg></div>
+  <h2 id="arrivalTitle">You're Here</h2>
+  <p id="arrivalSub">Your spot is within a few steps.</p>
+  <button class="btn btn-filled" id="btnArrivalDone">Done</button>
+  <button class="btn btn-tinted red" id="btnArrivalDelete">Delete Spot</button>
+  <button class="btn btn-plain" id="btnArrivalKeep">Keep Looking</button>
+</section>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span><button id="toastBtn" hidden>Undo</button></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ======================================================================
+   Utilities
+   ====================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_ANDROID = /Android/.test(navigator.userAgent);
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SECURE = window.isSecureContext || location.hostname === 'localhost';
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ---------- geometry ---------- */
+const R = 6371000, rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+const norm360 = a => ((a % 360) + 360) % 360;
+/** Wrap to (-180, 180] — the shortest signed turn. */
+const wrap180 = a => { a = norm360(a); return a > 180 ? a - 360 : a; };
+function haversine(lat1, lng1, lat2, lng2) {
+  const dLat = rad(lat2 - lat1), dLng = rad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function bearing(lat1, lng1, lat2, lng2) {
+  const φ1 = rad(lat1), φ2 = rad(lat2), Δλ = rad(lng2 - lng1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return norm360(deg(Math.atan2(y, x)));
+}
+function destination(lat, lng, dist, brg) {
+  const δ = dist / R, θ = rad(brg), φ1 = rad(lat), λ1 = rad(lng);
+  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ));
+  const λ2 = λ1 + Math.atan2(Math.sin(θ) * Math.sin(δ) * Math.cos(φ1), Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2));
+  return { lat: deg(φ2), lng: deg(λ2) };
+}
+/** Tilt-compensated compass heading from alpha/beta/gamma (W3C example formula). */
+function tiltHeading(alpha, beta, gamma) {
+  const x = rad(beta || 0), y = rad(gamma || 0), z = rad(alpha || 0);
+  const cX = Math.cos(x), cY = Math.cos(y), cZ = Math.cos(z), sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
+  const Vx = -cZ * sY - sZ * sX * cY;
+  const Vy = -sZ * sY + cZ * sX * cY;
+  if (Math.abs(Vx) < 1e-9 && Math.abs(Vy) < 1e-9) return norm360(360 - (alpha || 0)); // degenerate (flat) → plain alpha
+  let h = Math.atan(Vx / Vy);
+  if (Vy < 0) h += Math.PI; else if (Vx < 0) h += 2 * Math.PI;
+  return norm360(deg(h));
+}
+const compassPoint = b => ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'][Math.round(norm360(b) / 45) % 8];
+
+/* ---------- storage ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
+};
+let spots = store.get('spotback.spots', []); if (!Array.isArray(spots)) spots = [];
+const settings = Object.assign({ units: 'm', vibrate: true, locGranted: false }, store.get('spotback.settings', {}));
+const saveSpots = () => store.set('spotback.spots', spots);
+const saveSettings = () => store.set('spotback.settings', settings);
+
+/* ---------- formatting ---------- */
+function fmtDist(m) {
+  if (settings.units === 'ft') {
+    const ft = m * 3.28084;
+    if (ft < 1000) return { v: String(Math.round(ft)), u: 'ft', w: 'feet' };
+    const mi = ft / 5280; return { v: mi.toFixed(mi < 10 ? 1 : 0), u: 'mi', w: 'miles' };
+  }
+  if (m < 1000) return { v: String(Math.round(m)), u: 'm', w: 'meters' };
+  const km = m / 1000; return { v: km.toFixed(km < 10 ? 1 : 0), u: 'km', w: 'kilometers' };
+}
+const fmtAcc = m => settings.units === 'ft' ? `${Math.round(m * 3.28084)} ft` : `${Math.round(m)} m`;
+const accWord = a => a <= 5 ? 'High' : a <= 10 ? 'Good' : a <= 30 ? 'Fair' : 'Low';
+function savedAgo(ts) {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return 'Saved just now';
+  const m = Math.round(s / 60); if (m < 60) return `Saved ${m} minute${m === 1 ? '' : 's'} ago`;
+  const h = Math.round(m / 60); if (h < 24) return `Saved ${h} hour${h === 1 ? '' : 's'} ago`;
+  const d = Math.round(h / 24); if (d === 1) return 'Saved yesterday';
+  if (d < 7) return `Saved ${d} days ago`;
+  return 'Saved ' + new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+const vibrate = p => { if (settings.vibrate && navigator.vibrate) { try { navigator.vibrate(p); } catch {} } };
+
+/* ---------- icons ---------- */
+const ICONS = {
+  car: { label: 'Car', tile: 'tile-blue', name: 'Car' },
+  bike: { label: 'Bike', tile: 'tile-green', name: 'Bike' },
+  tent: { label: 'Tent', tile: 'tile-orange', name: 'Tent' },
+  home: { label: 'Home', tile: 'tile-indigo', name: 'Home' },
+  bag: { label: 'Bag', tile: 'tile-brown', name: 'Bag' },
+  key: { label: 'Key', tile: 'tile-gray', name: 'Keys' },
+  beach: { label: 'Beach', tile: 'tile-teal', name: 'Beach Spot' },
+  other: { label: 'Other', tile: 'tile-red', name: 'Spot' }
+};
+const GENERIC = new Set(Object.values(ICONS).map(i => i.name).concat(['Location', 'Spot']));
+const glyph = k => `#g-${k === 'other' ? 'pin' : k}`;
+const tileHTML = (icon, cls = '') => { const i = ICONS[icon] || ICONS.other; return `<span class="tile ${i.tile} ${cls}"><svg class="ic"><use href="${glyph(icon in ICONS ? icon : 'other')}"/></svg></span>`; };
+
+/* ======================================================================
+   Layer navigation — one history entry per layer so Back closes the top one
+   ====================================================================== */
+const layers = [];           // [{ name, el, onClose }]
+const scrim = $('#scrim');
+function openLayer(name, el, onClose, replace = false) {
+  if (replace && layers.length) { const t = layers.pop(); hide(t); }
+  else history.pushState({ depth: layers.length + 1 }, '');
+  layers.push({ name, el, onClose });
+  el.classList.add('open');
+  syncScrim();
+  const f = $('.navbtn.bold, .navbtn, .title', el); setTimeout(() => f && f.focus && f.focus({ preventScroll: true }), 50);
+}
+function hide(l) { l.el.classList.remove('open'); try { l.onClose && l.onClose(); } catch {} }
+/** Close `name` and everything above it. Works through history so Back stays consistent. */
+function closeLayer(name) {
+  const i = layers.findIndex(l => l.name === name);
+  if (i < 0) return;
+  history.go(i - layers.length);
+}
+function closeTop() { if (layers.length) history.back(); }
+function syncScrim() {
+  const top = layers[layers.length - 1];
+  scrim.classList.toggle('show', !!top && (top.el.classList.contains('sheet') || top.el.classList.contains('card')));
+}
+window.addEventListener('popstate', e => {
+  const depth = (e.state && e.state.depth) || 0;
+  while (layers.length > depth) hide(layers.pop());
+  syncScrim();
+});
+history.replaceState({ depth: 0 }, '');
+scrim.addEventListener('click', () => { const t = layers[layers.length - 1]; if (t && t.name !== 'arrival') closeTop(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTop(); });
+
+/* ======================================================================
+   Toast
+   ====================================================================== */
+const toastEl = $('#toast'), toastText = $('#toastText'), toastBtn = $('#toastBtn');
+let toastTimer = 0, toastAction = null;
+function toast(text, action, onAction, ms = 5000) {
+  clearTimeout(toastTimer);
+  toastText.textContent = text; toastBtn.hidden = !action; toastBtn.textContent = action || '';
+  toastAction = onAction || null; toastEl.classList.add('show');
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
+}
+toastBtn.addEventListener('click', () => { clearTimeout(toastTimer); toastEl.classList.remove('show'); toastAction && toastAction(); });
+
+/* ======================================================================
+   Geolocation manager (one shared watch; pauses when the page is hidden)
+   ====================================================================== */
+const geo = {
+  id: null, subs: new Set(), last: null, lastTs: 0, err: null,
+  subscribe(fn) {
+    this.subs.add(fn);
+    if (this.last && performance.now() - this.lastTs < 8000) fn(this.last);
+    this.start();
+    return () => { this.subs.delete(fn); if (!this.subs.size) this.stop(); };
+  },
+  start() {
+    if (this.id != null || !this.subs.size || document.hidden) return;
+    const onFix = p => {
+      this.last = p; this.lastTs = performance.now(); this.err = null;
+      if (!settings.locGranted) { settings.locGranted = true; saveSettings(); }
+      $('#deniedBanner').hidden = true;
+      this.subs.forEach(f => f(p, null));
+    };
+    const onErr = e => { this.err = e; if (e.code === 1) showDenied(); this.subs.forEach(f => f(null, e)); };
+    if (DEMO) { this.id = demo.start(onFix); return; }
+    if (!SECURE) { this.id = -1; onErr({ code: 'insecure' }); return; }
+    if (!navigator.geolocation) { this.id = -1; onErr({ code: 'unsupported' }); return; }
+    this.id = navigator.geolocation.watchPosition(
+      p => onFix({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy ?? 100, heading: p.coords.heading, speed: p.coords.speed, ts: performance.now() }),
+      onErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  },
+  stop() {
+    if (this.id == null) return;
+    if (DEMO) demo.stop(); else if (this.id !== -1 && navigator.geolocation) navigator.geolocation.clearWatch(this.id);
+    this.id = null;
+  },
+  restart() { this.stop(); this.start(); }
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) geo.stop();
+  else { geo.start(); if (dir.active) wakeLock.request(); }
+});
+function showDenied() {
+  $('#deniedHow').textContent = IS_IOS
+    ? 'In Safari, tap “aA” in the address bar → Website Settings → Location → Allow. Or Settings → Privacy & Security → Location Services → Safari Websites.'
+    : IS_ANDROID ? 'Tap the icon left of the address bar → Permissions → Location → Allow, then try again.'
+    : 'Click the icon left of the address bar → Site settings → Location → Allow, then try again.';
+  $('#deniedBanner').hidden = false;
+}
+$('#btnDeniedRetry').addEventListener('click', () => { $('#deniedBanner').hidden = true; geo.restart(); if (!geo.subs.size) geo.subscribe(() => {})(); });
+
+/* ---------- demo simulator (?demo=1) ---------- */
+const demo = {
+  timer: 0, pos: null, target: null, acc: 24, turn: 0, heading: 0,
+  start(onFix) {
+    if (!this.pos) this.pos = { lat: 37.33182, lng: -122.03118 };
+    const tick = () => {
+      let brg = 0;
+      if (this.target) {
+        const d = haversine(this.pos.lat, this.pos.lng, this.target.lat, this.target.lng);
+        brg = bearing(this.pos.lat, this.pos.lng, this.target.lat, this.target.lng);
+        if (d > 1) this.pos = destination(this.pos.lat, this.pos.lng, Math.min(0.65, d), brg + (Math.random() - .5) * 20);
+      }
+      this.acc = Math.max(4, this.acc * 0.975);
+      this.heading = norm360(brg + 55 * Math.sin(Date.now() / 3000) + this.turn);
+      compass.push(this.heading);
+      onFix({ lat: this.pos.lat, lng: this.pos.lng, acc: this.acc, heading: brg, speed: this.target ? 1.3 : 0, ts: performance.now() });
+    };
+    tick(); this.timer = setInterval(tick, 500); return 1;
+  },
+  stop() { clearInterval(this.timer); },
+  aim(spot) { this.target = spot; this.pos = destination(spot.lat, spot.lng, 240, 210); this.acc = 18; }
+};
+if (DEMO) window.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') demo.turn -= 15; if (e.key === 'ArrowRight') demo.turn += 15; });
+
+/* ======================================================================
+   Compass — a heading is "live" only if a valid event arrived in the last 2.5 s
+   ====================================================================== */
+const compass = {
+  heading: null, ts: -Infinity, listening: false, listenSince: 0,
+  perm: 'n/a',          // iOS only: 'unknown' | 'granted' | 'denied'; 'n/a' elsewhere
+  live() { return performance.now() - this.ts < 2500; },
+  push(h) { this.heading = norm360(h); this.ts = performance.now(); },
+  listen() {
+    if (this.listening) return;
+    this.listening = true; this.listenSince = performance.now();
+    if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onOrientation);
+    window.addEventListener('deviceorientation', onOrientation);
+  },
+  /** Must be called synchronously inside a user tap on iOS 13+. */
+  requestIOS(onDone) {
+    if (typeof DeviceOrientationEvent === 'undefined' || typeof DeviceOrientationEvent.requestPermission !== 'function') { this.listen(); onDone && onDone(); return; }
+    if (this.perm === 'n/a') this.perm = 'unknown';
+    if (this.perm === 'granted') { this.listen(); onDone && onDone(); return; }
+    DeviceOrientationEvent.requestPermission()
+      .then(r => { this.perm = r === 'granted' ? 'granted' : 'denied'; if (r === 'granted') this.listen(); })
+      .catch(() => { this.perm = 'denied'; })
+      .finally(() => onDone && onDone());
+  }
+};
+function screenAngle() { return (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0); }
+function onOrientation(e) {
+  let h = null;
+  if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) h = e.webkitCompassHeading;         // iOS
+  else if ((e.absolute === true || e.type === 'deviceorientationabsolute') && typeof e.alpha === 'number') {     // Android
+    h = Math.abs(e.beta || 0) < 45 ? 360 - e.alpha : tiltHeading(e.alpha, e.beta, e.gamma);
+  }
+  if (h == null || !isFinite(h)) return;
+  compass.push(h + screenAngle());
+}
+
+/* ---------- wake lock ---------- */
+const wakeLock = {
+  lock: null,
+  async request() { try { if ('wakeLock' in navigator && !document.hidden && dir.active) this.lock = await navigator.wakeLock.request('screen'); } catch {} },
+  release() { try { this.lock && this.lock.release(); } catch {} this.lock = null; }
+};
+
+/* ======================================================================
+   Home
+   ====================================================================== */
+const listEl = $('#spotList'), emptyEl = $('#empty'), listFoot = $('#listFoot');
+let homeUnsub = null, agoTimer = 0;
+function renderHome() {
+  listEl.innerHTML = '';
+  const has = spots.length > 0;
+  listEl.hidden = !has; listFoot.hidden = !has; emptyEl.hidden = has;
+  spots.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'row has-tile tappable'; row.setAttribute('role', 'listitem'); row.dataset.id = s.id;
+    row.innerHTML = `${tileHTML(s.icon)}
+      <button class="main" style="display:block" aria-label="Get directions to ${esc(s.name)}">
+        <div class="name">${esc(s.name)}</div><div class="sub">${savedAgo(s.timestamp)}</div>
+      </button>
+      <span class="detail tnum dist">—</span>
+      <button class="info-btn" aria-label="Edit ${esc(s.name)}"><svg class="ic"><use href="#g-info"/></svg></button>`;
+    $('.main', row).addEventListener('click', () => openDirections(s.id));
+    $('.info-btn', row).addEventListener('click', e => { e.stopPropagation(); openEdit(s.id, 'Edit Spot'); });
+    listEl.appendChild(row);
+  });
+  updateHomeDistances();
+  ensureHomeGeo();
+}
+function updateHomeDistances() {
+  const p = geo.last;
+  $$('.row', listEl).forEach(row => {
+    const s = spots.find(x => x.id === row.dataset.id); if (!s) return;
+    $('.sub', row).textContent = savedAgo(s.timestamp);
+    const d = p ? fmtDist(haversine(p.lat, p.lng, s.lat, s.lng)) : null;
+    $('.dist', row).textContent = d ? `${d.v} ${d.u}` : '—';
+  });
+}
+/** Live distances on Home only when location was already granted (never prompt from the list). */
+async function ensureHomeGeo() {
+  if (homeUnsub || !spots.length) return;
+  let granted = settings.locGranted || DEMO;
+  if (!granted && navigator.permissions && navigator.permissions.query) {
+    try { granted = (await navigator.permissions.query({ name: 'geolocation' })).state === 'granted'; } catch {}
+  }
+  if (granted && !homeUnsub) homeUnsub = geo.subscribe(p => p && updateHomeDistances());
+}
+clearInterval(agoTimer); agoTimer = setInterval(updateHomeDistances, 30000);
+
+/* ======================================================================
+   Save Location
+   ====================================================================== */
+const SAVE_MAX = 9000, SAVE_MIN = 2500, SAVE_GOOD = 5;
+const sv = { unsub: null, best: null, t0: 0, raf: 0, done: false, retry: 0 };
+const svEl = { head: $('#saveHeadline'), sub: $('#saveSub'), acc: $('#saveAcc'), prog: $('#saveProgress'), err: $('#saveErr'), btn: $('#btnSaveNow'), spin: $('#saveSpinner') };
+svEl.spin.innerHTML = Array.from({ length: 8 }, (_, i) => `<i style="transform:rotate(${i * 45}deg);animation-delay:${-1 + i * .125}s"></i>`).join('');
+
+function openSave() {
+  if (!SECURE) { $('#insecureBanner').hidden = false; return; }
+  sv.best = null; sv.done = false; sv.t0 = performance.now();
+  svEl.head.textContent = 'Finding your location…'; svEl.sub.textContent = 'Stay where you are for a few seconds.';
+  svEl.acc.textContent = 'Accuracy: —'; svEl.prog.style.width = '0'; svEl.err.hidden = true; svEl.btn.disabled = true; svEl.spin.hidden = false;
+  openLayer('save', $('#screenSave'), () => { if (sv.unsub) { sv.unsub(); sv.unsub = null; } cancelAnimationFrame(sv.raf); sv.done = true; });
+  if (DEMO) demo.target = null;
+  sv.unsub = geo.subscribe(onSaveFix);
+  sv.raf = requestAnimationFrame(saveTick);
+}
+function saveTick() {
+  if (sv.done) return;
+  const t = performance.now() - sv.t0;
+  svEl.prog.style.width = clamp(t / SAVE_MAX, 0, 1) * 100 + '%';
+  if (sv.best && ((sv.best.acc <= SAVE_GOOD && t >= SAVE_MIN) || t >= SAVE_MAX)) { commitSave(); return; }
+  if (!sv.best && t >= SAVE_MAX) { svEl.head.textContent = 'Still searching…'; svEl.sub.textContent = 'Move toward open sky. GPS is weak indoors.'; }
+  sv.raf = requestAnimationFrame(saveTick);
+}
+function onSaveFix(p, err) {
+  if (sv.done) return;
+  if (err) {
+    if (err.code === 1 || err.code === 'insecure' || err.code === 'unsupported') {
+      svEl.spin.hidden = true; svEl.head.textContent = err.code === 1 ? 'Location access is off' : err.code === 'insecure' ? 'HTTPS required' : 'Location unavailable';
+      svEl.sub.textContent = err.code === 1 ? 'Spotback needs your location to save this spot.' : err.code === 'insecure' ? 'Open this page from an https:// address.' : "This browser can't provide your location.";
+      svEl.acc.textContent = '';
+      svEl.err.hidden = false;
+      svEl.err.innerHTML = err.code === 1 ? `<button id="btnSaveRetry">Try Again</button><ol>${IS_IOS
+        ? '<li>Tap “aA” in the address bar → Website Settings → Location → Allow.</li><li>Or: Settings → Privacy &amp; Security → Location Services → Safari Websites → While Using.</li>'
+        : '<li>Tap the icon left of the address bar → Permissions → Location → Allow.</li><li>Check that Location is turned on for your phone.</li>'}</ol>` : '';
+      const b = $('#btnSaveRetry'); if (b) b.addEventListener('click', () => { svEl.err.hidden = true; svEl.spin.hidden = false; svEl.head.textContent = 'Finding your location…'; svEl.sub.textContent = 'Stay where you are for a few seconds.'; sv.t0 = performance.now(); geo.restart(); });
+    } else { svEl.sub.textContent = "Can't get a fix yet. Move toward open sky."; }
+    return;
+  }
+  if (!sv.best || p.acc < sv.best.acc) sv.best = p;
+  svEl.acc.textContent = `Accuracy: ${accWord(sv.best.acc)} (±${fmtAcc(sv.best.acc)})`;
+  svEl.sub.textContent = 'Stay where you are for a few seconds.';
+  svEl.btn.disabled = false;
+}
+function commitSave() {
+  if (!sv.best || sv.done) return;
+  sv.done = true;
+  const s = { id: uid(), name: 'Spot', icon: 'other', note: '', lat: sv.best.lat, lng: sv.best.lng, accuracy: Math.round(sv.best.acc), timestamp: Date.now() };
+  spots.unshift(s); if (!saveSpots()) toast("Saved for this session only — storage is unavailable.");
+  renderHome(); vibrate(30);
+  openEdit(s.id, 'Spot Saved', true);
+}
+$('#btnSave').addEventListener('click', openSave);
+$('#btnSaveCancel').addEventListener('click', () => closeLayer('save'));
+$('#btnSaveNow').addEventListener('click', commitSave);
+
+/* ======================================================================
+   Edit sheet
+   ====================================================================== */
+let editId = null;
+const edName = $('#edName'), edNote = $('#edNote'), picker = $('#picker');
+function openEdit(id, title, replace = false) {
+  const s = spots.find(x => x.id === id); if (!s) return;
+  editId = id;
+  $('#editTitle').textContent = title;
+  edName.value = s.name === 'Spot' && title === 'Spot Saved' ? '' : s.name; edNote.value = s.note || '';
+  renderPicker(s.icon);
+  $('#editFoot').textContent = `${savedAgo(s.timestamp)} · accurate to about ${fmtAcc(s.accuracy || 0)}`;
+  openLayer('edit', $('#sheetEdit'), () => { editId = null; }, replace);
+}
+function renderPicker(sel) {
+  picker.innerHTML = Object.entries(ICONS).map(([k, i]) =>
+    `<button type="button" data-icon="${k}" aria-pressed="${k === sel}" aria-label="${i.label}">${tileHTML(k)}<span>${i.label}</span></button>`).join('');
+}
+picker.addEventListener('click', e => {
+  const b = e.target.closest('button[data-icon]'); const s = spots.find(x => x.id === editId); if (!b || !s) return;
+  s.icon = b.dataset.icon;
+  if (!edName.value.trim() || GENERIC.has(edName.value.trim())) { s.name = ICONS[s.icon].name; edName.value = s.name; }
+  $$('button', picker).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  saveSpots(); renderHome(); syncDirTitle();
+});
+edName.addEventListener('input', () => { const s = spots.find(x => x.id === editId); if (!s) return; s.name = edName.value.trim() || ICONS[s.icon].name || 'Spot'; saveSpots(); renderHome(); syncDirTitle(); });
+edNote.addEventListener('input', () => { const s = spots.find(x => x.id === editId); if (!s) return; s.note = edNote.value.trim(); saveSpots(); renderHome(); syncDirTitle(); });
+$('#btnEditDone').addEventListener('click', () => closeLayer('edit'));
+$('#btnEditDelete').addEventListener('click', () => { const id = editId; deleteSpot(id); });
+
+/** Remove a spot, close any layers showing it, offer Undo. */
+function deleteSpot(id) {
+  const i = spots.findIndex(x => x.id === id); if (i < 0) return;
+  const [removed] = spots.splice(i, 1); saveSpots();
+  if (dir.spot && dir.spot.id === id) closeLayer('directions'); else closeLayer('edit');
+  renderHome();
+  toast(`“${removed.name}” deleted`, 'Undo', () => { spots.splice(Math.min(i, spots.length), 0, removed); saveSpots(); renderHome(); });
+}
+
+/* ======================================================================
+   Directions
+   ====================================================================== */
+const dir = { spot: null, active: false, unsub: null, raf: 0, angle: 0, target: 0, pos: null, aligned: false, alignedAt: 0, hist: [], arriveCount: 0, arrivalOpen: false, arrivalDismissed: false, lastMsg: '', lastInstr: '', srAt: 0 };
+const de = { title: $('#dirTitle'), instr: $('#instruction'), trend: $('#trend'), arrow: $('#arrow'), north: $('#northUp'), close: $('#closeMsg'), msgText: $('#compassText'), msgBtn: $('#btnCompass'), dv: $('#distValue'), du: $('#distUnit'), acc: $('#accuracy'), noteCard: $('#noteCard'), note: $('#noteText'), maps: $('#btnMaps'), sr: $('#srDir') };
+
+function openDirections(id) {
+  const s = spots.find(x => x.id === id); if (!s) return;
+  if (!SECURE) { $('#insecureBanner').hidden = false; return; }
+  compass.requestIOS();                     // synchronous inside the tap (iOS prompt)
+  Object.assign(dir, { spot: s, active: true, angle: 0, target: 0, pos: null, aligned: false, hist: [], arriveCount: 0, arrivalOpen: false, arrivalDismissed: false, lastMsg: '', lastInstr: '' });
+  syncDirTitle();
+  de.instr.textContent = 'Finding you…'; de.trend.textContent = ''; de.dv.textContent = '—'; de.du.textContent = ''; de.acc.textContent = ''; de.acc.classList.remove('low');
+  de.arrow.classList.remove('aligned', 'off'); de.arrow.style.transform = ''; de.close.hidden = true; de.north.hidden = true;
+  de.maps.href = IS_IOS ? `https://maps.apple.com/?daddr=${s.lat},${s.lng}&dirflg=w` : `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}&travelmode=walking`;
+  openLayer('directions', $('#screenDir'), closeDirections);
+  if (DEMO) demo.aim(s);
+  dir.unsub = geo.subscribe(onDirFix);
+  wakeLock.request();
+  dir.raf = requestAnimationFrame(dirLoop);
+}
+function closeDirections() {
+  dir.active = false; dir.spot = null;
+  if (dir.unsub) { dir.unsub(); dir.unsub = null; }
+  cancelAnimationFrame(dir.raf); wakeLock.release();
+  if (DEMO) demo.target = null;
+  updateHomeDistances();
+}
+function syncDirTitle() {
+  if (!dir.spot) return;
+  de.title.textContent = dir.spot.name;
+  de.noteCard.hidden = !dir.spot.note; de.note.textContent = dir.spot.note || '';
+}
+$('#btnDirBack').addEventListener('click', () => closeLayer('directions'));
+$('#btnDirEdit').addEventListener('click', () => dir.spot && openEdit(dir.spot.id, 'Edit Spot'));
+$('#btnShare').addEventListener('click', () => dir.spot && shareSpot(dir.spot));
+de.msgBtn.addEventListener('click', () => { compass.perm = 'unknown'; compass.requestIOS(); });
+
+function onDirFix(p, err) {
+  if (!dir.active) return;
+  if (err) { if (!dir.pos) de.instr.textContent = err.code === 1 ? 'Location is off' : 'No GPS signal'; return; }
+  dir.pos = p;
+  const s = dir.spot, d = haversine(p.lat, p.lng, s.lat, s.lng);
+  // Distance
+  const f = fmtDist(d); de.dv.textContent = f.v; de.du.textContent = f.u;
+  de.acc.textContent = p.acc > 30 ? `Accuracy: Low · move to open sky` : `Accuracy: ${accWord(p.acc)} (±${fmtAcc(p.acc)})`;
+  de.acc.classList.toggle('low', p.acc > 30);
+  // Trend vs. ~6 s ago
+  const now = performance.now(); dir.hist.push({ t: now, d }); dir.hist = dir.hist.filter(h => now - h.t < 12000);
+  const old = dir.hist.find(h => now - h.t > 5000);
+  de.trend.textContent = !old ? '' : d < old.d - 2 ? 'Getting closer' : d > old.d + 2 ? 'Moving away' : '';
+  // Arrival: two consecutive readings inside the threshold
+  const thr = Math.max(6, Math.min(0.8 * p.acc, 15));
+  dir.arriveCount = d <= thr ? dir.arriveCount + 1 : 0;
+  if (dir.arriveCount >= 2 && !dir.arrivalOpen && !dir.arrivalDismissed) showArrival(d);
+  if (d > thr * 2 + 5) dir.arrivalDismissed = false;
+}
+
+/** rAF loop: pick a heading source, ease the arrow along the shortest path, keep the status honest. */
+function dirLoop() {
+  if (!dir.active) return;
+  dir.raf = requestAnimationFrame(dirLoop);
+  const now = performance.now(), p = dir.pos, s = dir.spot;
+  let heading = null, src = 'none';
+  if (compass.live()) { heading = compass.heading; src = 'compass'; }
+  else if (p && typeof p.heading === 'number' && isFinite(p.heading) && (p.speed || 0) > 0.8 && now - p.ts < 6000) { heading = p.heading; src = 'gps'; }
+
+  // Status line under the dial
+  let msg = '', btn = '';
+  if (src === 'compass') msg = '';
+  else if (compass.perm === 'unknown') { msg = 'Turn on the compass so the arrow follows where you point.'; btn = 'Turn On'; }
+  else if (compass.perm === 'denied') { msg = 'Compass is blocked. Allow motion access in Settings.'; btn = 'Try Again'; }
+  else if (src === 'gps') msg = "Using the direction you're walking. Keep moving.";
+  else if (compass.listening && now - compass.listenSince > 2500) msg = "This device has no compass, so the arrow can't turn. It points north-up.";
+  else if (!compass.listening) compass.listen();
+  const key = msg + '|' + btn;
+  if (key !== dir.lastMsg) { dir.lastMsg = key; de.msgText.textContent = msg; de.msgBtn.hidden = !btn; de.msgBtn.textContent = btn; }
+  de.north.hidden = heading != null || !p;
+
+  if (!p) return;
+  const d = haversine(p.lat, p.lng, s.lat, s.lng), brg = bearing(p.lat, p.lng, s.lat, s.lng);
+  const tooClose = d < p.acc;
+  de.close.hidden = !tooClose; de.arrow.classList.toggle('off', tooClose);
+
+  // Arrow: bearing minus heading, eased ~20%/frame along the shortest path
+  dir.target = heading == null ? brg : brg - heading;
+  dir.angle += wrap180(dir.target - dir.angle) * (REDUCED ? 1 : 0.2);
+  de.arrow.style.transform = `rotate(${dir.angle.toFixed(2)}deg)`;
+
+  // Instruction
+  const rel = wrap180(dir.target), a = Math.abs(rel), side = rel > 0 ? 'right' : 'left';
+  let instr;
+  if (tooClose) instr = "You're very close";
+  else if (heading == null) instr = `Head ${compassPoint(brg)}`;
+  else if (a < 12) instr = 'Straight ahead';
+  else if (a < 40) instr = `Slightly ${side}`;
+  else if (a < 135) instr = `Turn ${side}`;
+  else instr = 'Turn around';
+  if (instr !== dir.lastInstr) { dir.lastInstr = instr; de.instr.textContent = instr; }
+
+  // Aligned: green + pulse + a short tick (edge-triggered, rate-limited)
+  const aligned = heading != null && !tooClose && a < 12;
+  if (aligned !== dir.aligned) {
+    dir.aligned = aligned; de.arrow.classList.toggle('aligned', aligned);
+    if (aligned && now - dir.alignedAt > 2000) { dir.alignedAt = now; vibrate(30); }
+  }
+  // Screen reader summary every 4 s
+  if (now - dir.srAt > 4000) { dir.srAt = now; const f = fmtDist(d); de.sr.textContent = tooClose ? "You're very close. Look around." : `${f.v} ${f.w} away. ${instr}.`; }
+}
+
+/* ---------- arrival ---------- */
+function showArrival(d) {
+  dir.arrivalOpen = true;
+  const f = fmtDist(Math.max(1, d));
+  $('#arrivalSub').textContent = `“${dir.spot.name}” is about ${f.v} ${f.w} from you${dir.spot.note ? ` — ${dir.spot.note}` : ''}.`;
+  vibrate([80, 60, 220]);
+  openLayer('arrival', $('#cardArrival'), () => { dir.arrivalOpen = false; });
+}
+$('#btnArrivalDone').addEventListener('click', () => closeLayer('directions'));
+$('#btnArrivalKeep').addEventListener('click', () => { dir.arrivalDismissed = true; closeLayer('arrival'); });
+$('#btnArrivalDelete').addEventListener('click', () => dir.spot && deleteSpot(dir.spot.id));
+
+/* ======================================================================
+   Share / import  (#s=lat,lng&n=name&i=icon)
+   ====================================================================== */
+function spotLink(s) {
+  const u = new URL(location.href); u.search = ''; u.hash = '';
+  const h = new URLSearchParams(); h.set('s', `${s.lat.toFixed(6)},${s.lng.toFixed(6)}`); h.set('n', s.name); h.set('i', s.icon);
+  return u.toString() + '#' + h.toString();
+}
+async function shareSpot(s) {
+  const url = spotLink(s);
+  if (navigator.share) {
+    try { await navigator.share({ title: s.name, text: `Here's where “${s.name}” is.`, url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast('Link copied'); }
+  catch { prompt('Copy this link:', url); }
+}
+let pendingImport = null;
+function checkHash() {
+  if (!location.hash.includes('s=')) return;
+  const h = new URLSearchParams(location.hash.slice(1));
+  const [lat, lng] = (h.get('s') || '').split(',').map(Number);
+  history.replaceState({ depth: layers.length }, '', location.pathname + location.search);
+  if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+  const icon = h.get('i') in ICONS ? h.get('i') : 'other';
+  pendingImport = { id: uid(), name: (h.get('n') || 'Shared Spot').slice(0, 40), icon, note: '', lat, lng, accuracy: 0, timestamp: Date.now() };
+  $('#importRow').innerHTML = `${tileHTML(icon)}<div class="main"><div class="name">${esc(pendingImport.name)}</div><div class="sub tnum">${lat.toFixed(5)}, ${lng.toFixed(5)}</div></div>`;
+  openLayer('import', $('#sheetImport'), () => { pendingImport = null; });
+}
+$('#btnImportCancel').addEventListener('click', () => closeLayer('import'));
+$('#btnImportAdd').addEventListener('click', () => {
+  const s = pendingImport; if (!s) return closeLayer('import');
+  spots.unshift(s); saveSpots(); renderHome();
+  compass.requestIOS();
+  // Replace the import sheet with Directions in the same history slot.
+  pendingImport = null; openDirectionsReplacing(s.id);
+});
+function openDirectionsReplacing(id) {
+  const top = layers[layers.length - 1];
+  if (top && top.name === 'import') { top.onClose = null; hide(top); layers.pop(); history.replaceState({ depth: layers.length }, ''); }
+  openDirections(id);
+}
+window.addEventListener('hashchange', checkHash);
+
+/* ======================================================================
+   Settings
+   ====================================================================== */
+let deleteAllArmed = 0;
+function syncSettings() {
+  $$('#segUnits button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === settings.units)));
+  $('#swVibrate').setAttribute('aria-checked', String(!!settings.vibrate));
+  $('#btnDeleteAll').textContent = 'Delete All Spots'; clearTimeout(deleteAllArmed); deleteAllArmed = 0;
+  $('#installHint').textContent = IS_IOS ? 'To install: in Safari tap Share, then “Add to Home Screen”.' : 'To install: open the browser menu and choose “Install app” or “Add to Home screen”.';
+}
+$('#btnSettings').addEventListener('click', () => { syncSettings(); openLayer('settings', $('#sheetSettings')); });
+$('#btnSettingsDone').addEventListener('click', () => closeLayer('settings'));
+$('#segUnits').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; settings.units = b.dataset.v; saveSettings(); syncSettings(); updateHomeDistances(); });
+$('#swVibrate').addEventListener('click', () => { settings.vibrate = !settings.vibrate; saveSettings(); syncSettings(); if (settings.vibrate) vibrate(20); });
+$('#btnDeleteAll').addEventListener('click', e => {
+  if (!deleteAllArmed) {
+    e.currentTarget.textContent = 'Tap Again to Delete All';
+    deleteAllArmed = setTimeout(() => { deleteAllArmed = 0; $('#btnDeleteAll').textContent = 'Delete All Spots'; }, 3000);
+    return;
+  }
+  const backup = spots.slice(); spots = []; saveSpots(); renderHome(); closeLayer('settings');
+  toast(`${backup.length} spot${backup.length === 1 ? '' : 's'} deleted`, 'Undo', () => { spots = backup; saveSpots(); renderHome(); });
+});
+
+/* ======================================================================
+   Boot
+   ====================================================================== */
+if (!SECURE) $('#insecureBanner').hidden = false;
+if (DEMO) {
+  $('#demoBanner').hidden = false;
+  if (!spots.length) spots.push({ id: uid(), name: 'Car', icon: 'car', note: 'Level 3, near the elevator', lat: 37.33182, lng: -122.03118, accuracy: 6, timestamp: Date.now() - 2 * 3600e3 });
+}
+renderHome();
+checkHash();
+if ('serviceWorker' in navigator && SECURE && !DEMO) { try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {} }
+})();
+</script>
+</body>
+</html>
